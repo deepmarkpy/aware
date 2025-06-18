@@ -7,7 +7,7 @@ from typing import Optional
 import torch
 from torch.nn import functional as F
 import time
-from .detection import WatermarkDetectionNet
+from .detection import WatermarkDetectionNet, WatermarkPatternMerger
 from ..utils.pattern_utils import bytes_to_bipolar, bytes_to_bits
 
 class WatermarkEmbedder:
@@ -15,10 +15,11 @@ class WatermarkEmbedder:
     Optimization-based audio watermarking in spectral domain
     """
     
-    def __init__(self, frame_length: int = 2048, hop_length: int = 512):
+    def __init__(self, frame_length: int = 2048, hop_length: int = 512, strength: float = 3.0):
         self.frame_length = frame_length
         self.hop_length = hop_length
         self.embedding_bands = (1000, 4000)  # Frequency range for embedding
+        self.watermark_pattern_merger = WatermarkPatternMerger(strength=strength)
         self.detection_net = WatermarkDetectionNet(n_fft=frame_length)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.detection_net.to(self.device)
@@ -30,7 +31,7 @@ class WatermarkEmbedder:
         return np.where(mask)[0]
     
     def _objective_function(self, watermark_coeffs: np.ndarray, 
-                          original_stft: np.ndarray, 
+                          stft_magnitude: np.ndarray, 
                           watermark_pattern: np.ndarray,
                           freq_indices: np.ndarray,
                           strength: float,
@@ -40,7 +41,7 @@ class WatermarkEmbedder:
         
         Args:
             watermark_coeffs: Watermark coefficients to optimize
-            original_stft: Original STFT magnitude
+            stft_magnitude: Original STFT magnitude
             watermark_pattern: Pseudorandom watermark pattern
             freq_indices: Frequency indices for embedding
             strength: Watermark strength
@@ -50,7 +51,7 @@ class WatermarkEmbedder:
         watermark_2d = watermark_coeffs.reshape(len(freq_indices), -1)
         
         # Imperceptibility term (L2 distance from original)
-        imperceptibility = np.mean((watermark_2d - original_stft[freq_indices])**2)
+        imperceptibility = np.mean((watermark_2d - stft_magnitude[freq_indices])**2)
         
         # Robustness term (correlation with pattern)
         correlation = np.corrcoef(watermark_2d.flatten(), 
@@ -144,13 +145,16 @@ class WatermarkEmbedder:
         
         # Keep detection network in eval mode (frozen), but allow gradients to flow through
         self.detection_net.eval()
+        self.watermark_pattern_merger.eval()
         for param in self.detection_net.parameters():
             param.requires_grad = False  # Freeze detection network weights
         
-        # Convert to torch tensors
+        for param in self.watermark_pattern_merger.parameters():
+            param.requires_grad = False
+
         coeffs = torch.FloatTensor(initial_coeffs).to(self.device).requires_grad_(True)
         target_pattern = torch.FloatTensor(watermark_pattern).to(self.device)
-        original_stft = torch.FloatTensor(stft_magnitude).to(self.device)
+        stft_magnitude = torch.FloatTensor(stft_magnitude).to(self.device)
         
         # Setup optimizer
         optimizer = torch.optim.NAdam([coeffs], lr=0.001)  # Back to NAdam - no closure needed
@@ -169,14 +173,14 @@ class WatermarkEmbedder:
             optimizer.zero_grad()
             
             # Create watermarked spectrogram
-            watermarked_stft = original_stft.clone()
+            watermarked_stft = torch.zeros_like(stft_magnitude).to(self.device)#stft_magnitude.clone()
             coeffs_2d = coeffs.reshape(len(freq_indices), -1)
             watermarked_stft[freq_indices] = coeffs_2d
             
             # Get neural network prediction (MUST allow gradients!)
-            magnitude_tensor = watermarked_stft.unsqueeze(0)
-            predicted_pattern = self.detection_net(magnitude_tensor)
-            
+            watermark_magnitude = watermarked_stft.unsqueeze(0)
+            watermark_magnitude = self.watermark_pattern_merger(stft_magnitude, watermark_magnitude)
+            predicted_pattern = self.detection_net(watermark_magnitude)
             # Calculate loss - Multiple options for tanh outputs
             predicted = predicted_pattern.squeeze()
             
@@ -203,7 +207,7 @@ class WatermarkEmbedder:
             #neural_loss = cross_entropy_loss
 
             # Imperceptibility term
-            original_coeffs = original_stft[freq_indices].flatten()
+            original_coeffs = stft_magnitude[freq_indices].flatten()
             imperceptibility = torch.mean((coeffs - original_coeffs)**2)
             
             # Combined loss
@@ -215,8 +219,8 @@ class WatermarkEmbedder:
             scheduler.step(total_loss)
             
             # ENFORCE BOUNDS AFTER OPTIMIZER STEP (this is the key!)
-            with torch.no_grad():
-                coeffs.data = torch.clamp(coeffs.data, lower_bounds, upper_bounds)
+            #with torch.no_grad():
+            #    coeffs.data = torch.clamp(coeffs.data, lower_bounds, upper_bounds)
                 # Extra safety: ensure no negative magnitudes
                 #coeffs.data = torch.clamp(coeffs.data, min=1e-8)
             
@@ -232,6 +236,8 @@ class WatermarkEmbedder:
                 print(f"Iter {iteration+1:3d}: Loss = {total_loss.item():.6f} | "
                       f"Neural: {neural_loss.item():.6f} | Imp: {imperceptibility.item():.6f} | "
                       f"LR: {lr:.6f} | Time: {elapsed:.1f}s")
+                print("PREDICTED PATTERN: ", predicted_pattern)
+                print("TARGET PATTERN: ", target_pattern)
                 #print(f"Range: [{coeffs.min():.6f}, {coeffs.max():.6f}]")
                 #print(f"Min position: {torch.argmin(coeffs).item()}")
                 #print(f"Lower bounds: {lower_bounds.min():.6f}, {lower_bounds.max():.6f}")
@@ -239,7 +245,7 @@ class WatermarkEmbedder:
                 #print(f"Lower bound at min position: {lower_bounds[torch.argmin(coeffs)].item():.6f}")
                 #print(f"Upper bound at min position: {upper_bounds[torch.argmin(coeffs)].item():.6f}")
 
-                #print(f"Max difference: {np.max(watermarked_stft[freq_indices] - original_stft[freq_indices], axis=0):.6f}")
+                #print(f"Max difference: {np.max(watermarked_stft[freq_indices] - stft_magnitude[freq_indices], axis=0):.6f}")
                 #print("PREDICTED PATTERN: ", predicted_pattern)
                 #print("TARGET PATTERN: ", target_pattern)
             
@@ -290,8 +296,7 @@ class WatermarkEmbedder:
             raise ValueError("No suitable frequencies found for embedding")
         
         # Initialize watermark coefficients with original values
-        initial_watermark_coeffs = stft_magnitude[freq_indices].flatten()
-        # Don't normalize - keep original magnitudes for proportional bounds
+        initial_watermark_coeffs = stft_magnitude[freq_indices].flatten() # TODO: initialize with random values
         
         if verbose:
             print(f"Initial coefficients shape: {initial_watermark_coeffs.shape}")
@@ -365,10 +370,26 @@ class WatermarkEmbedder:
                 print(f"Number of iterations: {result.nit}")
         
         # Apply optimized watermark
-        watermarked_magnitude = stft_magnitude.copy()
+        stft_magnitude = torch.FloatTensor(stft_magnitude).to(self.device)
         optimized_coeffs = result.x.reshape(len(freq_indices), -1)
+        watermarked_magnitude = np.zeros_like(stft_magnitude)
         watermarked_magnitude[freq_indices] = optimized_coeffs
+        watermarked_magnitude = torch.FloatTensor(watermarked_magnitude).to(self.device)
         
+        self.watermark_pattern_merger.eval()
+        with torch.no_grad():
+            watermarked_magnitude = self.watermark_pattern_merger(stft_magnitude, watermarked_magnitude)
+
+        self.detection_net.eval()
+        with torch.no_grad():
+            predicted_pattern = self.detection_net(watermarked_magnitude.unsqueeze(0))
+            print("PREDICTED PATTERN: ", predicted_pattern)
+            print("TARGET PATTERN: ", watermark_pattern)
+            input()
+
+        watermarked_magnitude = watermarked_magnitude.cpu().numpy()
+        stft_magnitude = stft_magnitude.cpu().numpy()
+        #TODO: remove this later        
         # Calculate MSE for magnitudes
         mse = np.mean((watermarked_magnitude[freq_indices] - stft_magnitude[freq_indices])**2)
         max_delta = np.max(watermarked_magnitude[freq_indices] - stft_magnitude[freq_indices])
@@ -388,6 +409,7 @@ class WatermarkEmbedder:
         #np.save('watermarked_stft.npy', watermarked_stft)
         # Reconstruct complex STFT
         watermarked_complex = watermarked_magnitude * np.exp(1j * stft_phase)
+        np.save('watermarked_stft.npy', watermarked_magnitude)
         
         # Inverse STFT
         _, watermarked_audio = istft(watermarked_complex, 

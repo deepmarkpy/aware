@@ -31,14 +31,14 @@ def test_detection(audio: np.ndarray, embedder: WatermarkEmbedder, device: torch
                                 nperseg=embedder.frame_length,
                                 noverlap=embedder.frame_length - embedder.hop_length)
         stft_magnitude = np.abs(stft_complex)
-        #stft_magnitude = np.load('watermarked_stft.npy')
+        stft_magnitude = np.load('watermarked_stft.npy')
 
         # Convert to tensor
-        magnitude_tensor = torch.FloatTensor(stft_magnitude).unsqueeze(0).to(device)
+        stft_magnitude = torch.FloatTensor(stft_magnitude).unsqueeze(0).to(device)
         
         # Detect watermark
         with torch.no_grad():
-            detected_pattern = embedder.detection_net(magnitude_tensor)
+            detected_pattern = embedder.detection_net(stft_magnitude)
         
         original_pattern = bytes_to_bipolar(original_watermark)
 

@@ -37,6 +37,30 @@ class Conv1dBlock(nn.Module):
         x = self.activation(x)
         return x
 
+class WatermarkPatternMerger(nn.Module):
+    """
+    Module to merge watermark magnitude with STFT magnitude and apply strength scaling
+    """
+    def __init__(self, strength: float = 3.0):
+        super(WatermarkPatternMerger, self).__init__()
+        self.strength = strength
+        
+    def forward(self, stft_magnitude: torch.Tensor, watermark_magnitude: torch.Tensor) -> torch.Tensor:
+        """
+        Merge watermark magnitude with STFT magnitude
+        
+        Args:
+            stft_magnitude: STFT magnitude tensor [batch, freq, time]
+            watermark_magnitude: Watermark magnitude tensor [batch, freq, time]    
+        Returns:
+            Merged STFT magnitude with embedded watermark
+        """
+        watermark_magnitude = -1 * torch.abs(watermark_magnitude)/torch.norm(watermark_magnitude) * torch.norm(stft_magnitude) * 10**(-self.strength/20)
+
+        return stft_magnitude + watermark_magnitude
+
+
+
 class WatermarkDetectionNet(nn.Module):
     """
     Neural network for watermark detection in audio spectrograms
@@ -50,7 +74,8 @@ class WatermarkDetectionNet(nn.Module):
                  num_blocks: int = 3,
                  initial_pool_size: int = 4,
                  activation: str = 'swish',
-                 watermark_length: int = 24):
+                 watermark_length: int = 24,
+                 strength: float = 3.0):
         super(WatermarkDetectionNet, self).__init__()
         
         self.sample_rate = sample_rate
@@ -58,7 +83,7 @@ class WatermarkDetectionNet(nn.Module):
         self.n_mels = n_mels
         self.num_blocks = num_blocks
         self.initial_pool_size = initial_pool_size
-        
+        self.strength = strength
         # Mel filter bank as first layer
         self.mel_layer = MelFilterBankLayer(
             sample_rate=sample_rate,
