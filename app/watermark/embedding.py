@@ -153,7 +153,7 @@ class WatermarkEmbedder:
         original_stft = torch.FloatTensor(stft_magnitude).to(self.device)
         
         # Setup optimizer
-        optimizer = torch.optim.NAdam([coeffs], lr=0.001)  # Back to NAdam - no closure needed
+        optimizer = torch.optim.NAdam([coeffs], lr=0.00001)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=500, factor=0.9)
         
         # Extract bounds
@@ -177,6 +177,7 @@ class WatermarkEmbedder:
             magnitude_tensor = watermarked_stft.unsqueeze(0)
             predicted_pattern = self.detection_net(magnitude_tensor)
             
+            #input("Press Enter to continue...")
             # Calculate loss - Multiple options for tanh outputs
             predicted = predicted_pattern.squeeze()
             
@@ -226,7 +227,7 @@ class WatermarkEmbedder:
                 best_coeffs = coeffs.clone().detach()
             
             # Progress reporting
-            if verbose and (iteration % 10 == 0 or iteration == 0):
+            if verbose and (iteration % 200 == 0 or iteration == 0):
                 elapsed = time.time() - self._start_time if self._start_time else 0
                 lr = optimizer.param_groups[0]['lr']
                 print(f"Iter {iteration+1:3d}: Loss = {total_loss.item():.6f} | "
@@ -395,13 +396,13 @@ class WatermarkEmbedder:
                                    noverlap=self.frame_length - self.hop_length)
         
         # Ensure same length as input
-        #if len(watermarked_audio) != len(audio):
-        #    watermarked_audio = watermarked_audio[:len(audio)]
+        if len(watermarked_audio) != len(audio):
+            watermarked_audio = watermarked_audio[:len(audio)]
         
         # Normalize to prevent clipping
-        # max_val = np.max(np.abs(watermarked_audio))
-        #if max_val > 1.0:
-        #    watermarked_audio = watermarked_audio / max_val
+        max_val = np.max(np.abs(watermarked_audio))
+        if max_val > 1.0:
+           watermarked_audio = watermarked_audio / max_val
             
         return watermarked_audio
     
