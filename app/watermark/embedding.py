@@ -29,38 +29,7 @@ class WatermarkEmbedder:
         mask = (freqs >= self.embedding_bands[0]) & (freqs <= self.embedding_bands[1])
         return np.where(mask)[0]
     
-    def _objective_function(self, watermark_coeffs: np.ndarray, 
-                          original_stft: np.ndarray, 
-                          watermark_pattern: np.ndarray,
-                          freq_indices: np.ndarray,
-                          strength: float,
-                          alpha: float = 0.5) -> float:
-        """
-        Objective function for optimization
-        
-        Args:
-            watermark_coeffs: Watermark coefficients to optimize
-            original_stft: Original STFT magnitude
-            watermark_pattern: Pseudorandom watermark pattern
-            freq_indices: Frequency indices for embedding
-            strength: Watermark strength
-            alpha: Trade-off between imperceptibility and robustness
-        """
-        # Reshape watermark coefficients
-        watermark_2d = watermark_coeffs.reshape(len(freq_indices), -1)
-        
-        # Imperceptibility term (L2 distance from original)
-        imperceptibility = np.mean((watermark_2d - original_stft[freq_indices])**2)
-        
-        # Robustness term (correlation with pattern)
-        correlation = np.corrcoef(watermark_2d.flatten(), 
-                                np.tile(watermark_pattern, watermark_2d.shape[1]))[0,1]
-        robustness = -(correlation * strength)**2  # Maximize correlation
-        
-        # Combined objective
-        return alpha * imperceptibility + (1 - alpha) * robustness
-    
-    def _neural_objective_function(self, watermark_coeffs: np.ndarray,
+    def _optimize_with_lbfgsb(self, watermark_coeffs: np.ndarray,
                                    original_magnitude: np.ndarray,
                                    watermark_pattern: np.ndarray,
                                    freq_indices: np.ndarray) -> float:
@@ -97,7 +66,6 @@ class WatermarkEmbedder:
         neural_loss = F.binary_cross_entropy(predicted_watermark.squeeze(), target_tensor)
         
         # Imperceptibility term (L2 distance from original)
-
         imperceptibility = np.mean((watermark_2d - original_magnitude[freq_indices])**2)
         
         alpha = 0.0  # Weight for imperceptibility
@@ -138,7 +106,7 @@ class WatermarkEmbedder:
             except Exception:
                 print(f"Iter {self._optimization_iter:3d}: Time: {elapsed:.1f}s")
     
-    def _optimize_with_torch(self, initial_coeffs, stft_magnitude, watermark_pattern, 
+    def _optimize_with_adam(self, initial_coeffs, stft_magnitude, watermark_pattern, 
                            freq_indices, bounds, max_iterations, verbose):
         """PyTorch-based optimization using Adam optimizer"""
         
@@ -147,7 +115,6 @@ class WatermarkEmbedder:
         for param in self.detection_net.parameters():
             param.requires_grad = False  # Freeze detection network weights
         
-        # Convert to torch tensors
         coeffs = torch.FloatTensor(initial_coeffs).to(self.device).requires_grad_(True)
         target_pattern = torch.FloatTensor(watermark_pattern).to(self.device)
         original_stft = torch.FloatTensor(stft_magnitude).to(self.device)
@@ -173,7 +140,7 @@ class WatermarkEmbedder:
             coeffs_2d = coeffs.reshape(len(freq_indices), -1)
             watermarked_stft[freq_indices] = coeffs_2d
             
-            # Get neural network prediction (MUST allow gradients!)
+            # Get neural network prediction
             magnitude_tensor = watermarked_stft.unsqueeze(0)
             predicted_pattern = self.detection_net(magnitude_tensor)
             
@@ -191,9 +158,11 @@ class WatermarkEmbedder:
             push_loss = mse_loss - 0.1 * torch.mean(torch.abs(predicted))
             # Option 3b: Push-to-extremes loss for sigmoid outputs (push from 0.5)
             push_sigmoid_loss = mse_loss - 0.1 * torch.mean(torch.abs(predicted - 0.5))
+
             # Option 4: Sign-based loss - only cares about matching signs
             sign_loss = torch.mean(torch.clamp(-predicted * target_pattern, min=0))
-            # Option 5: Cross-entropy loss
+            
+            # Option 5: Cross-entropy loss (for sigmoid outputs)
             #cross_entropy_loss = F.binary_cross_entropy(predicted, target_pattern)
 
             # Choose which loss to use:
@@ -215,11 +184,9 @@ class WatermarkEmbedder:
             optimizer.step()
             scheduler.step(total_loss)
             
-            # ENFORCE BOUNDS AFTER OPTIMIZER STEP (this is the key!)
+            # ENFORCE BOUNDS AFTER OPTIMIZER STEP
             with torch.no_grad():
                 coeffs.data = torch.clamp(coeffs.data, lower_bounds, upper_bounds)
-                # Extra safety: ensure no negative magnitudes
-                #coeffs.data = torch.clamp(coeffs.data, min=1e-8)
             
             # Track best
             if total_loss.item() < best_loss:
@@ -233,16 +200,6 @@ class WatermarkEmbedder:
                 print(f"Iter {iteration+1:3d}: Loss = {total_loss.item():.6f} | "
                       f"Neural: {neural_loss.item():.6f} | Imp: {imperceptibility.item():.6f} | "
                       f"LR: {lr:.6f} | Time: {elapsed:.1f}s")
-                #print(f"Range: [{coeffs.min():.6f}, {coeffs.max():.6f}]")
-                #print(f"Min position: {torch.argmin(coeffs).item()}")
-                #print(f"Lower bounds: {lower_bounds.min():.6f}, {lower_bounds.max():.6f}")
-                #print(f"Upper bounds: {upper_bounds.min():.6f}, {upper_bounds.max():.6f}")
-                #print(f"Lower bound at min position: {lower_bounds[torch.argmin(coeffs)].item():.6f}")
-                #print(f"Upper bound at min position: {upper_bounds[torch.argmin(coeffs)].item():.6f}")
-
-                #print(f"Max difference: {np.max(watermarked_stft[freq_indices] - original_stft[freq_indices], axis=0):.6f}")
-                #print("PREDICTED PATTERN: ", predicted_pattern)
-                #print("TARGET PATTERN: ", target_pattern)
             
         # Create result object mimicking scipy.optimize result
         class TorchResult:
@@ -280,11 +237,8 @@ class WatermarkEmbedder:
         stft_magnitude = np.abs(stft_complex)
         stft_phase = np.angle(stft_complex)
         
-        print("stft_magnitude.shape: ", stft_magnitude.shape)
-
         watermark_pattern = bytes_to_bipolar(watermark)
             
-        # Get embedding frequency indices
         freq_indices = self._get_embedding_frequencies(sample_rate, self.frame_length)
         
         if len(freq_indices) == 0:
@@ -292,7 +246,6 @@ class WatermarkEmbedder:
         
         # Initialize watermark coefficients with original values
         initial_watermark_coeffs = stft_magnitude[freq_indices].flatten()
-        # Don't normalize - keep original magnitudes for proportional bounds
         
         if verbose:
             print(f"Initial coefficients shape: {initial_watermark_coeffs.shape}")
@@ -329,20 +282,20 @@ class WatermarkEmbedder:
         self._current_freq_indices = freq_indices
         
         # Choose optimization method
-        use_torch_optimizer = True #len(initial_watermark_coeffs) > 1000
+        use_adam_optimizer = True #len(initial_watermark_coeffs) > 1000
         
-        if use_torch_optimizer:
+        if use_adam_optimizer:
             if verbose:
                 print("Using PyTorch Adam optimizer (better for large problems)")
-            result = self._optimize_with_torch(initial_watermark_coeffs, stft_magnitude, 
+            result = self._optimize_with_adam(initial_watermark_coeffs, stft_magnitude, 
                                              watermark_pattern, freq_indices, bounds, 
                                              optimization_steps, verbose)
         else:
             if verbose:
                 print("Using L-BFGS-B optimizer")
-            # Optimize watermark coefficients
+            
             result = minimize(
-                self._neural_objective_function,
+                self._optimize_with_lbfgsb,
                 initial_watermark_coeffs,
                 args=(stft_magnitude, watermark_pattern, freq_indices),
                 method='L-BFGS-B',
@@ -377,6 +330,7 @@ class WatermarkEmbedder:
             print(f"Max delta: {max_delta:.6f}")
             print(f"Magnitude MSE: {mse:.6f}")
             print(f"Magnitude range: [{optimized_coeffs.min():.6f}, {optimized_coeffs.max():.6f}]")
+        
         # Calculate SNR for magnitudes
         original_power = np.mean(stft_magnitude[freq_indices]**2)
         noise = watermarked_magnitude[freq_indices] - stft_magnitude[freq_indices]
@@ -386,8 +340,7 @@ class WatermarkEmbedder:
             snr_db = 10 * np.log10(original_power / noise_power)
             if verbose:
                 print(f"Magnitude SNR: {snr_db:.2f} dB")
-        #np.save('watermarked_stft.npy', watermarked_stft)
-        # Reconstruct complex STFT
+        
         watermarked_complex = watermarked_magnitude * np.exp(1j * stft_phase)
         
         # Inverse STFT
@@ -422,5 +375,6 @@ class WatermarkEmbedder:
             'embedding_frequency_range': self.embedding_bands,
             'num_embedding_frequencies': len(freq_indices),
             'embedding_frequencies': embedding_freqs.tolist(),
+            'freq_indices': freq_indices.tolist(),
             'audio_duration': len(audio) / sample_rate
         } 

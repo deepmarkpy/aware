@@ -38,9 +38,9 @@ def test_detection(audio: np.ndarray, embedder: WatermarkEmbedder, device: torch
                                     noverlap=embedder.frame_length - embedder.hop_length)
             stft_magnitude = np.abs(stft_complex)
             
-            # Convert to tensor
             magnitude_tensor = torch.FloatTensor(stft_magnitude).unsqueeze(0).to(device)
             embedder.detection_net.use_dropout = False
+            
             # Detect watermark
             with torch.no_grad():
                 detected_pattern = embedder.detection_net(magnitude_tensor)
@@ -53,6 +53,7 @@ def test_detection(audio: np.ndarray, embedder: WatermarkEmbedder, device: torch
             
             # Convert detected values to bipolar pattern for comparison
             detected_pattern = detect_bipolar_pattern(detected_np)
+            
             # Calculate bit error rate
             min_length = min(len(detected_np), len(original_pattern))
             bit_errors = np.sum(detected_pattern[:min_length] != original_pattern[:min_length])
@@ -266,7 +267,7 @@ def main():
     
     # Test detection
     print("\nTesting detection against various attacks...")
-    detection_results = test_detection(watermarked, embedder, device, watermark_bytes, sr)
+    detection_results = test_detection(loaded_watermarked, embedder, device, watermark_bytes, loaded_sr)
     
     # Display original detection results
     if detection_results['original']['detection_success']:

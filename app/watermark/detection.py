@@ -45,7 +45,6 @@ class Conv2dBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, freq_kernel: int = 3, activation: str = 'relu'):
         super(Conv2dBlock, self).__init__()
         
-        # 2D conv with kernel (freq_kernel, 1) - operates only on frequency dimension
         self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=(3, 3), padding=(1, 1), stride=(2, 2))
         self.instance_norm = nn.InstanceNorm2d(out_channels)
         
@@ -101,11 +100,12 @@ class WatermarkDetectionNet(nn.Module):
         # Initial average pooling
         self.initial_pool = nn.AvgPool1d(kernel_size=initial_pool_size, stride=initial_pool_size)
         #self.initial_pool = nn.AvgPool2d(kernel_size=(initial_pool_size, initial_pool_size), stride=(initial_pool_size, initial_pool_size))
-        # Add dropout after initial pooling (only if use_dropout is True)
+
         if self.use_dropout:
             self.dropout = nn.Dropout(p=0.1)
         else:
             self.dropout = nn.Identity()
+
         # Convolutional blocks
         self.conv_blocks = nn.ModuleList()
         
@@ -157,10 +157,9 @@ class WatermarkDetectionNet(nn.Module):
         # Apply mel filter bank: (batch, freq, time) -> (batch, n_mels, time)
         x = self.mel_layer(stft_magnitude)
         #print(f"Shape after mel layer: {x.shape}")
-        # Initial average pooling: (batch, n_mels, time) -> (batch, n_mels, time//pool_size)
 
-        #x = x.unsqueeze(1)
-        # Transpose dimensions 2 and 3 (freq and time)
+        #x = x.unsqueeze(1) # for conv2d
+        # Transpose dimensions 2 and 3 (freq and time) # for conv2d
         #x = x.transpose(1, 2)  # (batch, n_mels, time) -> (batch, time, n_mels)
         
         x = self.initial_pool(x)
