@@ -17,7 +17,7 @@ class Conv1dBlock(nn.Module):
     def __init__(self, in_channels: int, out_channels: int, activation: str = 'relu'):
         super(Conv1dBlock, self).__init__()
         
-        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size=3, stride=2, padding=1)
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=1, padding=1)
         self.instance_norm = nn.InstanceNorm1d(out_channels)
         
         if activation.lower() == 'relu':
@@ -80,7 +80,7 @@ class WatermarkDetectionNet(nn.Module):
                  initial_pool_size: int = 2,
                  activation: str = 'swish',
                  watermark_length: int = 24,
-                 use_dropout: bool = True):
+                 use_dropout: bool = False):
         super(WatermarkDetectionNet, self).__init__()
         
         self.sample_rate = sample_rate
@@ -110,7 +110,7 @@ class WatermarkDetectionNet(nn.Module):
         self.conv_blocks = nn.ModuleList()
         
         # Calculate channel dimensions for each block
-        channels = [n_mels] + [128 * (2**i) for i in range(num_blocks)]
+        channels = [n_mels] + [512 * (2**i) for i in range(num_blocks)]
         
         for i in range(num_blocks):
             block = Conv1dBlock(
@@ -121,11 +121,12 @@ class WatermarkDetectionNet(nn.Module):
             self.conv_blocks.append(block)
         
         # Global average pooling
-        self.global_avg_pool = nn.AdaptiveAvgPool1d(watermark_length)
+        self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
+        self.global_max_pool = nn.AdaptiveMaxPool1d(1)
         #self.global_avg_pool = nn.AdaptiveAvgPool2d((1,1))
         
         # Final fully connected layer
-        self.fc_out = nn.Linear(channels[-1] * watermark_length, watermark_length)
+        self.fc_out = nn.Linear(channels[-1] * 2, watermark_length)
         
         self.sigmoid = nn.Sigmoid()
         self.tanh = nn.Tanh()
@@ -156,8 +157,14 @@ class WatermarkDetectionNet(nn.Module):
         #print(f"Shape before mel layer: {stft_magnitude.shape}")
         # Apply mel filter bank: (batch, freq, time) -> (batch, n_mels, time)
         x = self.mel_layer(stft_magnitude)
-        #print(f"Shape after mel layer: {x.shape}")
-
+        #print(f"[mel_layer] shape: {x.shape}, mean: {x.mean().item():.4f}, max: {x.max().item():.4f}")
+        
+        # Standardize to zero mean, unit variance
+        x_mean = x.mean()
+        x_std = x.std()
+        x = (x - x_mean) / (x_std + 1e-8)
+        
+        #print(f"[mel_norm] shape: {x.shape}, mean: {x.mean().item():.4f}, max: {x.max().item():.4f}")
         #x = x.unsqueeze(1) # for conv2d
         # Transpose dimensions 2 and 3 (freq and time) # for conv2d
         #x = x.transpose(1, 2)  # (batch, n_mels, time) -> (batch, time, n_mels)
@@ -174,8 +181,10 @@ class WatermarkDetectionNet(nn.Module):
             x = self.dropout(x)
             # Restore original training state
             self.dropout.train(dropout_training)
+            print(f"Dropout is enabled")
         else:
-            print("Dropout is disabled")
+            #print("Dropout is disabled")
+            pass
         
         # Calculate nonzero values and estimate dropout rate
         # nonzero_after = (x != 0).sum().item()
@@ -191,7 +200,9 @@ class WatermarkDetectionNet(nn.Module):
         
         #print(f"Shape before global pooling: {x.shape}")
         # Global average pooling: (batch, channels, time) -> (batch, channels, watermark_length)
-        x = self.global_avg_pool(x)
+        x_avg = self.global_avg_pool(x)
+        x_max = self.global_max_pool(x)
+        x = torch.cat([x_avg, x_max], dim=1)
         #print(f"Shape after global pooling: {x.shape}")
         
         # Flatten: (batch, channels, watermark_length) -> (batch, channels * watermark_length)

@@ -12,7 +12,9 @@ from attacks import pcm_bit_depth_conversion, mp3_compression, delete_samples, r
 
 def calculate_snr(original: np.ndarray, watermarked: np.ndarray) -> float:
     """Calculate Signal-to-Noise Ratio in dB"""
-    watermarked = watermarked[:len(original)]
+    min_length = min(len(original), len(watermarked))
+    watermarked = watermarked[:min_length]
+    original = original[:min_length]
     signal_power = np.mean(original**2)
     noise = watermarked - original
     noise_power = np.mean(noise**2)
@@ -33,12 +35,29 @@ def test_detection(audio: np.ndarray, embedder: WatermarkEmbedder, device: torch
         """Helper function to detect watermark and calculate metrics"""
         try:
             # Convert audio to STFT for detection
-            _, _, stft_complex = stft(test_audio, 
-                                    nperseg=embedder.frame_length,
-                                    noverlap=embedder.frame_length - embedder.hop_length)
-            stft_magnitude = np.abs(stft_complex)
+            #test_audio = np.load("watermarked_audio.npy")
+            # _, _, stft_complex = stft(test_audio, 
+            #                         nperseg=embedder.frame_length,
+            #                         noverlap=embedder.frame_length - embedder.hop_length)
+            # stft_magnitude = np.abs(stft_complex)
+            window = torch.hann_window(embedder.frame_length)
+            watermarked_complex = torch.stft(torch.FloatTensor(test_audio), 
+                                       n_fft=embedder.frame_length,
+                                       hop_length=embedder.hop_length,
+                                       return_complex=True, window=window)
+            stft_magnitude = torch.abs(watermarked_complex)
             
-            magnitude_tensor = torch.FloatTensor(stft_magnitude).unsqueeze(0).to(device)
+            # Only compare with original for unattacked audio
+            if attack_name == "original":
+                watermarked_magnitude = np.load("watermarked_magnitude.npy")
+                print("MSE between stft_magnitude and watermarked_magnitude: ", np.mean((stft_magnitude.detach().cpu().numpy() - watermarked_magnitude)**2))
+                print("max stft_magnitude: ", np.max(stft_magnitude.detach().cpu().numpy()))
+                print("max watermarked_magnitude: ", np.max(watermarked_magnitude))
+                input("Press Enter to continue...")
+            
+            #magnitude_tensor = torch.FloatTensor(stft_magnitude).unsqueeze(0).to(device)
+            magnitude_tensor = stft_magnitude.unsqueeze(0).to(device)
+            
             embedder.detection_net.use_dropout = False
             
             # Detect watermark
@@ -61,8 +80,9 @@ def test_detection(audio: np.ndarray, embedder: WatermarkEmbedder, device: torch
             
             # Calculate SNR of attacked audio vs original
             if attack_name != "original":
-                signal_power = np.mean(audio**2)
-                noise = test_audio - audio[:len(test_audio)]  # Handle length differences
+                min_length = min(len(audio), len(test_audio))
+                signal_power = np.mean(audio[:min_length]**2)
+                noise = test_audio[:min_length] - audio[:min_length]  # Handle length differences
                 noise_power = np.mean(noise**2)
                 attack_snr = 10 * np.log10(signal_power / noise_power) if noise_power > 0 else float('inf')
             else:
@@ -169,7 +189,7 @@ def main():
     parser.add_argument('input_file', help='Path to input audio file')
     parser.add_argument('--watermark', default='dep', help='Watermark text (default: test_watermark)')
     parser.add_argument('--strength', type=float, default=5, help='Watermark strength (default: 25.0)')
-    parser.add_argument('--steps', type=int, default=10000, help='Optimization steps (default: 100)')
+    parser.add_argument('--steps', type=int, default=50000, help='Optimization steps (default: 100)')
     parser.add_argument('--output', help='Output file path (optional)')
     parser.add_argument('--quiet', action='store_true', help='Disable optimization progress output')
     

@@ -106,8 +106,36 @@ class WatermarkEmbedder:
             except Exception:
                 print(f"Iter {self._optimization_iter:3d}: Time: {elapsed:.1f}s")
     
+    def _recompute_watermarked_magnitude(self, watermarked_magnitude, stft_phase, audio):
+        # Create complex tensor using torch operations
+        watermarked_complex = watermarked_magnitude * torch.exp(1j * torch.tensor(stft_phase))
+        
+        window = torch.hann_window(self.frame_length)
+        watermarked_audio = torch.istft(watermarked_complex, 
+                                      n_fft=self.frame_length,
+                                      hop_length=self.hop_length, 
+                                      window=window)
+            
+        if watermarked_audio.shape[-1] != audio.shape[-1]:
+            watermarked_audio = watermarked_audio[:audio.shape[-1]]
+        
+        # Normalize to prevent clipping using torch operations
+        max_val = torch.max(torch.abs(watermarked_audio))
+        watermarked_audio = watermarked_audio / max_val
+        
+        # Use torch.stft instead of scipy.signal.stft
+        window = torch.hann_window(self.frame_length)
+        watermarked_complex = torch.stft(watermarked_audio, 
+                                       n_fft=self.frame_length,
+                                       hop_length=self.hop_length,
+                                       window=window,
+                                       return_complex=True)
+        watermarked_magnitude = torch.abs(watermarked_complex)
+        
+        return watermarked_magnitude
+
     def _optimize_with_adam(self, initial_coeffs, stft_magnitude, watermark_pattern, 
-                           freq_indices, bounds, max_iterations, verbose):
+                           freq_indices, bounds, max_iterations, verbose, stft_phase, audio):
         """PyTorch-based optimization using Adam optimizer"""
         
         # Keep detection network in eval mode (frozen), but allow gradients to flow through
@@ -116,11 +144,12 @@ class WatermarkEmbedder:
             param.requires_grad = False  # Freeze detection network weights
         
         coeffs = torch.FloatTensor(initial_coeffs).to(self.device).requires_grad_(True)
+
         target_pattern = torch.FloatTensor(watermark_pattern).to(self.device)
         original_stft = torch.FloatTensor(stft_magnitude).to(self.device)
         
         # Setup optimizer
-        optimizer = torch.optim.NAdam([coeffs], lr=0.00001)
+        optimizer = torch.optim.NAdam([coeffs], lr=0.1)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=500, factor=0.9)
         
         # Extract bounds
@@ -139,8 +168,9 @@ class WatermarkEmbedder:
             watermarked_stft = original_stft.clone()
             coeffs_2d = coeffs.reshape(len(freq_indices), -1)
             watermarked_stft[freq_indices] = coeffs_2d
-            
+            watermarked_stft = self._recompute_watermarked_magnitude(watermarked_stft, stft_phase, audio)
             # Get neural network prediction
+
             magnitude_tensor = watermarked_stft.unsqueeze(0)
             predicted_pattern = self.detection_net(magnitude_tensor)
             
@@ -165,12 +195,16 @@ class WatermarkEmbedder:
             # Option 5: Cross-entropy loss (for sigmoid outputs)
             #cross_entropy_loss = F.binary_cross_entropy(predicted, target_pattern)
 
+            # Option 6: Bit Error Rate (BER) loss (for hard sign match)
+            ber_loss = torch.mean((torch.sign(predicted) != torch.sign(target_pattern)).float())
+
             # Choose which loss to use:
             #neural_loss = sign_loss
             #neural_loss = hinge_loss 
             #neural_loss = mse_loss
             neural_loss = push_loss
             #neural_loss = cross_entropy_loss
+            #neural_loss = ber_loss
 
             # Imperceptibility term
             original_coeffs = original_stft[freq_indices].flatten()
@@ -198,7 +232,7 @@ class WatermarkEmbedder:
                 elapsed = time.time() - self._start_time if self._start_time else 0
                 lr = optimizer.param_groups[0]['lr']
                 print(f"Iter {iteration+1:3d}: Loss = {total_loss.item():.6f} | "
-                      f"Neural: {neural_loss.item():.6f} | Imp: {imperceptibility.item():.6f} | "
+                      f"Neural: {neural_loss.item():.6f} | BER: {ber_loss.item():.6f} | Imp: {imperceptibility.item():.6f} | "
                       f"LR: {lr:.6f} | Time: {elapsed:.1f}s")
             
         # Create result object mimicking scipy.optimize result
@@ -231,11 +265,14 @@ class WatermarkEmbedder:
         """
         # Compute STFT
         audio = audio/np.max(np.abs(audio))
-        stft_result = stft(audio, nperseg=self.frame_length, 
-                          noverlap=self.frame_length - self.hop_length)
-        _, _, stft_complex = stft_result
-        stft_magnitude = np.abs(stft_complex)
-        stft_phase = np.angle(stft_complex)
+        window = torch.hann_window(self.frame_length)
+        stft_result = torch.stft(torch.FloatTensor(audio), 
+                          n_fft=self.frame_length, 
+                          hop_length=self.hop_length, 
+                          window=window, 
+                          return_complex=True)
+        stft_magnitude = torch.abs(stft_result)
+        stft_phase = torch.angle(stft_result)
         
         watermark_pattern = bytes_to_bipolar(watermark)
             
@@ -289,7 +326,7 @@ class WatermarkEmbedder:
                 print("Using PyTorch Adam optimizer (better for large problems)")
             result = self._optimize_with_adam(initial_watermark_coeffs, stft_magnitude, 
                                              watermark_pattern, freq_indices, bounds, 
-                                             optimization_steps, verbose)
+                                             optimization_steps, verbose, stft_phase, audio)
         else:
             if verbose:
                 print("Using L-BFGS-B optimizer")
@@ -319,6 +356,7 @@ class WatermarkEmbedder:
                 print(f"Number of iterations: {result.nit}")
         
         # Apply optimized watermark
+        stft_magnitude = stft_magnitude.detach().cpu().numpy()
         watermarked_magnitude = stft_magnitude.copy()
         optimized_coeffs = result.x.reshape(len(freq_indices), -1)
         watermarked_magnitude[freq_indices] = optimized_coeffs
@@ -341,23 +379,41 @@ class WatermarkEmbedder:
             if verbose:
                 print(f"Magnitude SNR: {snr_db:.2f} dB")
         
-        watermarked_complex = watermarked_magnitude * np.exp(1j * stft_phase)
+        # watermarked_complex = watermarked_magnitude * np.exp(1j * stft_phase)
         
-        # Inverse STFT
-        _, watermarked_audio = istft(watermarked_complex, 
-                                   nperseg=self.frame_length,
-                                   noverlap=self.frame_length - self.hop_length)
+        # # Inverse STFT
+        # _, watermarked_audio = istft(watermarked_complex, 
+        #                            nperseg=self.frame_length,
+        #                            noverlap=self.frame_length - self.hop_length)
         
-        # Ensure same length as input
-        if len(watermarked_audio) != len(audio):
-            watermarked_audio = watermarked_audio[:len(audio)]
         
-        # Normalize to prevent clipping
-        max_val = np.max(np.abs(watermarked_audio))
-        if max_val > 1.0:
-           watermarked_audio = watermarked_audio / max_val
+        # # Ensure same length as input
+        # if len(watermarked_audio) != len(audio):
+        #     watermarked_audio = watermarked_audio[:len(audio)]
+        
+        # # Normalize to prevent clipping
+        # max_val = np.max(np.abs(watermarked_audio))
+        # watermarked_audio = watermarked_audio / max_val
+
+        watermarked_complex = torch.FloatTensor(watermarked_magnitude) * torch.exp(1j * torch.tensor(stft_phase))
+        
+        window = torch.hann_window(self.frame_length)
+        watermarked_audio = torch.istft(watermarked_complex, 
+                                      n_fft=self.frame_length,
+                                      hop_length=self.hop_length, 
+                                      window=window)
             
-        return watermarked_audio
+        if watermarked_audio.shape[-1] != audio.shape[-1]:
+            watermarked_audio = watermarked_audio[:audio.shape[-1]]
+        
+        # Normalize to prevent clipping using torch operations
+        max_val = torch.max(torch.abs(watermarked_audio))
+        watermarked_audio = watermarked_audio / max_val
+
+        np.save("watermarked_audio.npy", watermarked_audio.detach().cpu().numpy())
+        np.save("watermarked_magnitude.npy", watermarked_magnitude)
+
+        return watermarked_audio.detach().cpu().numpy()
     
     def get_embedding_info(self, audio: np.ndarray, sample_rate: int) -> dict:
         """Get information about embedding parameters for given audio"""
