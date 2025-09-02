@@ -1,4 +1,4 @@
-from deltamark.interfaces.audio import BaseAudioProcessor
+from AWARE.interfaces.audio import BaseAudioProcessor
 import torch
 
 class STFT(BaseAudioProcessor):
@@ -25,7 +25,7 @@ class STFT(BaseAudioProcessor):
             raise ValueError(f"Invalid window type: {window}")
 
     def __call__(self, data: torch.Tensor) -> torch.Tensor:
-        return torch.stft(data, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window, return_complex=True)
+        return torch.stft(data, n_fft=self.n_fft, hop_length=self.hop_length, center=True, window=self.window, return_complex=True)
 
 class ISTFT(BaseAudioProcessor):
     """
@@ -45,7 +45,7 @@ class ISTFT(BaseAudioProcessor):
             raise ValueError(f"Invalid window type: {window}")
 
     def __call__(self, data: torch.Tensor) -> torch.Tensor:
-        return torch.istft(data, n_fft=self.n_fft, hop_length=self.hop_length, window=self.window)
+        return torch.istft(data, n_fft=self.n_fft, hop_length=self.hop_length, center=True, window=self.window)
     
 class STFTDecomposer(BaseAudioProcessor):
     """
