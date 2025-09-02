@@ -10,5 +10,5 @@ class BaseDetectorNet(nn.Module):
 
 class BaseDetector(ABC):    
     @abstractmethod
-    def detect(self, audio: np.ndarray) -> np.ndarray:
+    def detect(self, audio: np.ndarray, sampling_rate: int) -> np.ndarray:
         pass
