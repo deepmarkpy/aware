@@ -1,5 +1,5 @@
 import numpy as np
-from deltamark.interfaces.watermark import BasePatternProcessor
+from AWARE.interfaces.watermark import BasePatternProcessor
 from typing import Any
 
 class PatternEncoder(BasePatternProcessor):
@@ -14,6 +14,8 @@ class PatternEncoder(BasePatternProcessor):
             return self._bytes_to_bipolar(inputs)
         elif self.mode == 'bytes2bits':
             return self._bytes_to_bits(inputs)
+        elif self.mode == 'bits':
+            return inputs 
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
         
@@ -28,7 +30,7 @@ class PatternEncoder(BasePatternProcessor):
             Numpy array of bits (0s and 1s)
         """
         binary_str = ''.join(format(b, '08b') for b in inputs)
-        return np.array([int(bit) for bit in binary_str], dtype=np.float32)
+        return np.array([int(bit) for bit in binary_str], dtype=np.int32)
 
     def _bits_to_bipolar(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -40,7 +42,7 @@ class PatternEncoder(BasePatternProcessor):
         Returns:
             Numpy array of bipolar values (-1s and 1s)
         """
-        return np.array([2 * bit - 1 for bit in inputs], dtype=np.float32)
+        return np.array([2 * bit - 1 for bit in inputs], dtype=np.int32)
 
     def _bytes_to_bipolar(self, inputs: bytes) -> np.ndarray:
         """

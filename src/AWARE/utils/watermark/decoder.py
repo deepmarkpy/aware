@@ -1,5 +1,5 @@
 import numpy as np
-from deltamark.interfaces.watermark import BasePatternProcessor
+from AWARE.interfaces.watermark import BasePatternProcessor
 
 class PatternDecoder(BasePatternProcessor):
     """Utility class for decoding detected watermark patterns"""
@@ -19,6 +19,8 @@ class PatternDecoder(BasePatternProcessor):
             return self._bipolar_to_bytes(self._detect_bipolar(detected_values, self.threshold))
         elif self.encoder_mode == 'bytes2bits':
             return self._bits_to_bytes(self._detect_binary(detected_values, self.threshold))
+        elif self.encoder_mode == 'bits':
+            return self._detect_binary(detected_values, self.threshold)
         else:
             raise ValueError(f"Invalid mode: {self.mode}")
 
@@ -33,7 +35,7 @@ class PatternDecoder(BasePatternProcessor):
         Returns:
             Numpy array of binary pattern (0s and 1s)
         """
-        return (detected_values > threshold).astype(np.float32)
+        return (detected_values > threshold).astype(np.int32)
 
     def _detect_bipolar(self, detected_values: np.ndarray, threshold: float = 0.0) -> np.ndarray:
         """
@@ -46,7 +48,7 @@ class PatternDecoder(BasePatternProcessor):
         Returns:
             Numpy array of bipolar pattern (-1s and 1s)
         """
-        return 2*(detected_values > threshold).astype(np.float32) - 1
+        return 2*(detected_values > threshold).astype(np.int32) - 1
 
     def _bits_to_bytes(self, detected_values: np.ndarray) -> bytes:
         """
@@ -58,7 +60,7 @@ class PatternDecoder(BasePatternProcessor):
         """
         Convert detected values to bits
         """
-        return (detected_values > 0).astype(np.float32)
+        return (detected_values > 0).astype(np.int32)
     
     def _bipolar_to_bytes(self, detected_values: np.ndarray) -> bytes:
         """
