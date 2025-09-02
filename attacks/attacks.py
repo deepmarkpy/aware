@@ -4,6 +4,9 @@ import tempfile
 import subprocess
 import os
 import time
+import random
+import pyrubberband as pyrb
+from scipy.signal import butter, filtfilt
 from abc import ABC, abstractmethod
 
 
@@ -33,6 +36,7 @@ class PCMBitDepthConversion(Attack):
             pcm: PCM bit depth (8, 16, 24)
         """
         self.pcm = pcm
+        self.name = f"pcm_{pcm}"
     
     def apply(self, audio, sr):
         """Apply PCM bit depth conversion
@@ -69,6 +73,7 @@ class MP3Compression(Attack):
         """
         self.quality = quality
         self.pcm_bits = pcm_bits
+        self.name = f"mp3_{quality}"
         
         # Check if ffmpeg is available during initialization
         try:
@@ -144,6 +149,7 @@ class DeleteSamples(Attack):
             percentage: Percentage of samples to delete (0-1)
         """
         self.percentage = percentage
+        self.name = f"delete_{percentage}"
     
     def apply(self, audio, sr):
         """Delete percentage of samples from the audio
@@ -164,6 +170,30 @@ class DeleteSamples(Attack):
         return audio
 
 
+class TimeStretch(Attack):
+    """Time stretch attack"""
+    
+    def __init__(self, rate = 1.0):
+        """
+        Args:
+            `rate > 1` → playback is faster (duration decreases).
+            `rate < 1` → playback is slower (duration increases).
+        """
+        self.rate = rate
+        self.name = f"ts_{rate}"
+    
+    def apply(self, audio, sr):
+        """
+            Args:
+            audio: Input audio (float32, range -1 to 1)
+            sr: Sample rate
+        """
+        audio_stretched = pyrb.time_stretch(audio, sr, self.rate)
+
+        return audio_stretched
+
+
+
 class Resample(Attack):
     """Resample attack"""
     
@@ -173,6 +203,7 @@ class Resample(Attack):
             target_sr: Target sample rate for downsampling
         """
         self.target_sr = target_sr
+        self.name = f"resample_{target_sr}"
     
     def apply(self, audio, sr):
         """Resample audio to target rate and back using linear interpolation
@@ -185,16 +216,104 @@ class Resample(Attack):
         if downsample_factor > 1:
             # Simple decimation (take every nth sample)
             downsampled_audio = audio[::downsample_factor]
-            print(f"Downsampled to {self.target_sr} Hz: {len(downsampled_audio)} samples")
-                
+
             # Upsample back to original rate using linear interpolation
             upsampled_audio = np.interp(
                 np.arange(len(audio)), 
                 np.arange(0, len(audio), downsample_factor),
                 downsampled_audio
             )
-            print(f"Upsampled back to {sr} Hz: {len(upsampled_audio)} samples")
+            
             return upsampled_audio
+        
         else:
-            print(f"Audio already at or below {self.target_sr}Hz ({sr} Hz), skipping resampling")
             return audio
+        
+
+
+class RandomBandstop(Attack):
+    """Apply a random band-stop filter to audio.
+
+    A random band (width=`band_width`) is chosen inside [min_freq, max_freq]
+    (both in Hz). The chosen band is removed using a zero-phase Butterworth
+    filter (filtfilt) of order `order`.
+
+    Example:
+        a = RandomBandstop(band_width=300.0)
+        out = a.apply(audio, sr)
+    """
+
+    def __init__(self, band_width=200.0, min_freq=50.0, max_freq=4000.0, order=4):
+        """
+        Args:
+            band_width (float): width of the stop band in Hz.
+            min_freq (float): minimum low edge of the search range (Hz).
+            max_freq (float): maximum high edge of the search range (Hz).
+            order (int): Butterworth filter order (per section).
+        """
+        self.band_width = float(band_width)
+        self.min_freq = float(min_freq)
+        self.max_freq = float(max_freq)
+        self.order = int(order)
+        self.name = f"bandstop_{int(band_width)}Hz"
+
+    def apply(self, audio, sr):
+        """Apply the random bandstop.
+
+        Args:
+            audio (np.ndarray or array-like): 1D audio signal (float, -1..1 typically).
+            sr (int): sample rate in Hz.
+
+        Returns:
+            np.ndarray: filtered audio (same length as input).
+        """
+        # ensure numpy array (use float64 for filtfilt numeric stability)
+        audio_np = np.asarray(audio)
+        if audio_np.ndim != 1:
+            raise ValueError("RandomBandstop currently supports 1D audio arrays only.")
+
+        # Choose random low cutoff in [50, 4000 - band_width]
+        f_low = random.uniform(self.min_freq, self.max_freq - self.band_width)
+        f_high = f_low + self.band_width
+
+        # Normalize frequencies to Nyquist (half the sampling rate)
+        nyq = sr / 2.0
+        low = f_low / nyq
+        high = f_high / nyq
+
+        # design bandstop Butterworth and apply zero-phase filtering
+        b, a = butter(self.order, [low, high], btype='bandstop')
+        filtered = filtfilt(b, a, audio_np.astype(np.float64))
+
+        # return same dtype as input if possible
+        if isinstance(audio, np.ndarray):
+            return filtered.astype(audio.dtype)
+        else:
+            return filtered
+
+
+class SampleSupression(Attack):
+    """Zero out samples attack"""
+    
+    def __init__(self, percentage):
+        """
+        Args:
+            percentage: Percentage of samples to zero out (0-1)
+        """
+        self.percentage = percentage
+        self.name = f"sample_supression_{percentage}"
+    
+    def apply(self, audio, sr):
+        """Zero out percentage of samples from the audio
+        
+        Args:
+            audio: Input audio (float32, range -1 to 1)
+            sr: Sample rate
+        """
+        samples_to_delete = int(self.percentage * sr)
+        start_delete = np.random.randint(0, len(audio) - samples_to_delete)
+        end_delete = start_delete + samples_to_delete
+        
+        audio[start_delete : end_delete] = 0
+
+        return audio
