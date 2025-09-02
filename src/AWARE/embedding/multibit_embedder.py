@@ -1,22 +1,23 @@
-from deltamark.interfaces.embedding import BaseEmbedder
+from AWARE.interfaces.embedding import BaseEmbedder
 import torch
 import torch.nn as nn
 import librosa
 import numpy as np
 import time
 
-from deltamark.detection import MultibitSTFTMagnitudeDetectorNet 
-from deltamark.embedding.optimizers import get_optimizer
-from deltamark.embedding.schedulers import get_scheduler
-from deltamark.embedding.losses import get_loss_fn
-from deltamark.utils.audio import *
-from deltamark.utils.watermark import * 
-from deltamark.utils.logger import logger
-from deltamark.utils.utils import to_tensor
+from AWARE.detection import MultibitSTFTMagnitudeDetectorNetAWARE
+from AWARE.embedding.optimizers import get_optimizer
+from AWARE.embedding.schedulers import get_scheduler
+from AWARE.embedding.losses import get_loss_fn
+from AWARE.utils.audio import *
+from AWARE.utils.watermark import * 
+from AWARE.utils.logger import logger
+from AWARE.utils.utils import to_tensor
 
 class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
-    def __init__(self, frame_length: int = 2048, hop_length: int = 512, window: str = "hann", win_length: int = 2048, pattern_mode: str = "bits2bipolar", embedding_bands: tuple[int, int] = (100, 4000), tolerance_db: float = 25.0, num_iterations: int = 1000, detection_net_cfg: dict = None, optimizer_cfg: dict = None, scheduler_cfg: dict = None, loss:str = "push", verbose: bool = True):
+    def __init__(self, frame_length: int = 2048, hop_length: int = 512, window: str = "hann", win_length: int = 2048, pattern_mode: str = "bits2bipolar", embedding_bands: tuple[int, int] = (300, 4000), tolerance_db: float = 6.0, num_iterations: int = 1000, detection_net_cfg: dict = None, optimizer_cfg: dict = None, scheduler_cfg: dict = None, loss:str = "push", verbose: bool = True):
         self.frame_length = frame_length
+        self.hop_length = hop_length
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.embedding_bands = embedding_bands
         self.tolerance_db = tolerance_db
@@ -24,9 +25,10 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
         
         self.pattern_mode = pattern_mode
 
-        self.detection_net = MultibitSTFTMagnitudeDetectorNet(**detection_net_cfg)
+        self.detection_net = MultibitSTFTMagnitudeDetectorNetAWARE(**detection_net_cfg)
         self.detection_net.eval().to(self.device) # Keep detection network in eval mode (frozen), but allow gradients to flow through
         
+
         self.optimizer_name = optimizer_cfg['name']
         self.optimizer_params = optimizer_cfg['params']
         self.scheduler_name = scheduler_cfg['name']
@@ -37,16 +39,37 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
         
         self.audio_preprocess_pipeline = [WaveformNormalizer(), STFT(frame_length, hop_length, window, win_length), STFTDecomposer()]
         self.audio_postprocess_pipeline = [STFTAssembler(), ISTFT(frame_length, hop_length, window, win_length), WaveformNormalizer()]
-        self.pattern_preprocess_pipeline = [PatternEncoder(mode=pattern_mode)]
         
     def _get_embedding_frequency_indices(self, sampling_rate: int, frame_length: int) -> np.ndarray:    
         """Get frequency indices for watermark embedding"""
         freqs = librosa.fft_frequencies(sr=sampling_rate, n_fft=frame_length)
         mask = (freqs >= self.embedding_bands[0]) & (freqs <= self.embedding_bands[1])
-        return np.where(mask)[0]
+        return np.where(mask)[0], np.where(~mask)[0] 
+
+    def _recompute_watermarked_magnitude(self, watermarked_magnitude, stft_phase):
+        y = (watermarked_magnitude, stft_phase)
+        for processor in self.audio_postprocess_pipeline:
+            if isinstance(y, tuple) and len(y) == 2:
+                # For processors that take two arguments (like STFTAssembler)
+                y = processor(*y)
+            else:
+                # For processors that take one argument
+                y = processor(y)
+        
+        
+        watermarked_audio = y
+        
+        x = watermarked_audio
+        for processor in self.audio_preprocess_pipeline:
+            x = processor(x)
+        magnitude, _ = x
+
+        return magnitude
+
 
     def _optimize(self, initial_coeffs: torch.Tensor, stft_magnitude: torch.Tensor, watermark_pattern: torch.Tensor, 
-                           freq_indices: np.ndarray, bounds: tuple[float, float]) -> torch.Tensor:
+                           freq_indices: np.ndarray, not_freq_indices: np.ndarray, bounds: tuple[float, float], 
+                           stft_phase: torch.Tensor) -> torch.Tensor:
         """PyTorch-based aversarial optimization"""
         start_time = time.time()
 
@@ -68,7 +91,7 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
 
         best_loss = float('inf')
         best_coeffs = coeffs.clone()
-
+        
         for iteration in range(self.num_iterations):    
             optimizer.zero_grad()
 
@@ -77,9 +100,12 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
             coeffs_2d = coeffs.reshape(len(freq_indices), -1)
             watermarked_magnitude[freq_indices] = coeffs_2d
             # Get neural network prediction
+            watermarked_magnitude = self._recompute_watermarked_magnitude(watermarked_magnitude, stft_phase)
+            watermarked_magnitude[not_freq_indices] = 0.0
             magnitude_tensor = watermarked_magnitude.unsqueeze(0)
-            predicted_pattern = self.detection_net(magnitude_tensor).squeeze()
-
+            
+            predicted_pattern= self.detection_net(magnitude_tensor).squeeze()
+            
             loss = self.loss(predicted_pattern, watermark_pattern)
 
             loss.backward()
@@ -89,13 +115,13 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
             # ENFORCE BOUNDS AFTER OPTIMIZER STEP
             with torch.no_grad():
                 coeffs.data = torch.clamp(coeffs.data, lower_bounds, upper_bounds)
-            
+        
             # Track best
             if loss.item() < best_loss:
                 best_loss = loss.item()
                 best_coeffs = coeffs.clone().detach()
 
-            if self.verbose and (iteration % 200 == 0 or iteration == 0):
+            if self.verbose and (iteration % 200 == 0 or iteration == 0 or iteration == 399):
                 imperceptibility = torch.mean((coeffs - initial_coeffs)**2)
                 if self.pattern_mode == "bits2bipolar" or self.pattern_mode == "bytes2bipolar":
                     ber = torch.mean((torch.sign(predicted_pattern) != torch.sign(watermark_pattern)).float())
@@ -111,20 +137,19 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
         logger.info(f"Final loss: {best_loss:.6f}")
         return best_coeffs.detach().cpu()
     
-    def embed(self, audio: np.ndarray, sample_rate: int, watermark: bytes | np.ndarray) -> np.ndarray:
+    
+    def embed(self, audio: np.ndarray, sample_rate: int, watermark: np.ndarray) -> np.ndarray:
         # Preprocess audio
         x = to_tensor(audio).to(self.device)
+
         for processor in self.audio_preprocess_pipeline:
             x = processor(x)
         magnitude, phase = x
                 
-        # Preprocess watermark
-        for processor in self.pattern_preprocess_pipeline:
-            watermark = processor(watermark)
         watermark_pattern = to_tensor(watermark).to(self.device)
 
         # Get embedding frequency indices
-        freq_indices = self._get_embedding_frequency_indices(sample_rate, self.frame_length)
+        freq_indices, not_freq_indices = self._get_embedding_frequency_indices(sample_rate, self.frame_length)
         
         watermark_coeffs = magnitude[freq_indices].flatten()
 
@@ -140,7 +165,7 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
             logger.debug(f"MAX bound: {max(max(b) for b in bounds)}")
             logger.debug(f"MIN bound: {min(min(b) for b in bounds)}")
         try:
-            watermarked_coeffs = self._optimize(watermark_coeffs, magnitude, watermark_pattern, freq_indices, bounds)
+            watermarked_coeffs = self._optimize(watermark_coeffs, magnitude, watermark_pattern, freq_indices, not_freq_indices, bounds, phase)
         except Exception as e:
             logger.error(f"Error during embedding: {e}")
             raise e
@@ -155,6 +180,7 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
             logger.debug(f"Magnitude MSE: {mse.item():.6f}")
             logger.debug(f"Magnitude range: [{watermarked_coeffs.min().item():.6f}, {watermarked_coeffs.max().item():.6f}]")
 
+        
         # Postprocess watermarked magnitude
         y = (watermarked_magnitude, phase)
         for processor in self.audio_postprocess_pipeline:
@@ -166,5 +192,7 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
                 y = processor(y)
                 
         watermarked_audio = y
-
+        
+        
         return watermarked_audio.detach().cpu().numpy()
+    

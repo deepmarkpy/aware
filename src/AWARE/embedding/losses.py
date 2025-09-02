@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from deltamark.interfaces.loss import Loss
+from AWARE.interfaces.loss import Loss
 
 class HingeLoss(Loss):
     """Hinge loss - best for binary tanh targets"""

@@ -1,5 +1,5 @@
 import torch
-from deltamark.utils import logger
+from AWARE.utils import logger
 registry = {
     "adam": torch.optim.Adam,
     "nadam": torch.optim.NAdam,
