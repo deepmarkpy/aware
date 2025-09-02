@@ -6,15 +6,15 @@ window: hann
 win_length: 2048
 
 # Pattern processing
-pattern_mode: bits2bipolar  # bipolar, unipolar
-watermark_length: 30  # number of bits in the watermark
+pattern_mode: bits2bipolar  # bipolar, unipolar, bits
+watermark_length: 20  # number of bits in the watermark
 
 # Watermark parameters
-embedding_bands: [100, 4000]  # frequency range for embedding (Hz)
-tolerance_db: 5.0  # lower = stronger watermark, higher = weaker watermark
+embedding_bands: [300, 4000]  # frequency range for embedding (Hz)
+tolerance_db: 6.0  # lower = stronger watermark, higher = weaker watermark
 
 # Optimization parameters
-num_iterations: 1000
+num_iterations: 400
 optimizer_cfg: 
   name: nadam  # adam, nadam, sgd
   params:
@@ -27,7 +27,7 @@ scheduler_cfg:
 loss: push_extremes  # hinge, mse, push_extremes, push_sigmoid, sign, bce, ber
 
 # Logging
-verbose: true
+verbose: false
 
 # Detection network configuration
 detection_net_cfg:
@@ -37,10 +37,10 @@ detection_net_cfg:
   num_blocks: 3
   initial_pool_size: 2
   initial_pool_stride: 2
-  n_filters: [512, 1024, 2048]
-  activation: swish
-  output_length: 30
+  n_filters: [512, 1024, 1024]
+  activation: leaky_relu
+  output_length: 20
   final_activation: tanh
 
 # Detection parameters
-threshold: 0.5
+threshold: 0.0
