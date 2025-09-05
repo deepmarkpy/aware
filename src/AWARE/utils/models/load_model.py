@@ -1,9 +1,9 @@
 from pathlib import Path
-from AWARE.embedding import MultibitSTFTMagnitudeEmbedder
-from AWARE.detection import MultibitSTFTMagnitudeDetector
+from AWARE.embedding import AWAREEmbedder
+from AWARE.detection import AWAREDetector
 from AWARE.utils import load_config, logger
 
-def load_model():
+def load():
     script_dir = Path(__file__).parent.parent.parent
     cards_dir = script_dir / "cards"
 
@@ -19,7 +19,7 @@ def load_model():
 
     logger.info("Creating embedder...")
     try:
-        embedder = MultibitSTFTMagnitudeEmbedder(
+        embedder = AWAREEmbedder(
             frame_length=config.get("frame_length", 1024),
             hop_length=config.get("hop_length", 256),
             window=config.get("window", "hann"),
@@ -52,7 +52,7 @@ def load_model():
 
     logger.info("Creating detector...")
     try:
-        detector = MultibitSTFTMagnitudeDetector(
+        detector = AWAREDetector(
             model=embedder.detection_net,
             threshold=config.get("threshold", 0.0),
             frame_length=config.get("frame_length", 1024),
