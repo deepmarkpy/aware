@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="deltamark",
+    name="aware",
     version="0.1.0",
     description="Audio watermarking with small (Δ) adversarial perturbations.",
     packages=find_packages(where="src"),
@@ -20,6 +20,8 @@ setup(
         "resampy==0.4.2",
         "tqdm==4.66.1",
         "pesq==0.0.4",
-        "pyyaml==6.0.1"
+        "pyyaml==6.0.1",
+        "pystoi==0.4.1",
+        "webrtcvad==2.0.10"
     ]
 )

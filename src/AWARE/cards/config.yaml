@@ -1,0 +1,46 @@
+
+# Audio processing parameters  
+frame_length: 1024
+hop_length: 256
+window: hann
+win_length: 1024
+
+# Pattern processing
+pattern_mode: bits2bipolar  # bipolar, unipolar, bits
+watermark_length: 20  # number of bits in the watermark
+
+# Watermark parameters
+embedding_bands: [500, 4000]  # frequency range for embedding (Hz)
+tolerance_db: 6.0  # lower = stronger watermark, higher = weaker watermark
+
+# Optimization parameters
+num_iterations: 400
+optimizer_cfg: 
+  name: nadam  # adam, nadam, sgd
+  params:
+    lr: 0.1
+scheduler_cfg: 
+  name: reduce_lr_on_plateau  # reduce_lr_on_plateau, cosine, linear
+  params:
+    factor: 0.9
+    patience: 500
+loss: push_extremes  # hinge, mse, push_extremes, push_sigmoid, sign, bce, ber
+
+# Logging
+verbose: false
+
+# Detection network configuration
+detection_net_cfg:
+  sample_rate: 16000
+  n_fft: 1024
+  n_mels: 128
+  num_blocks: 3
+  initial_pool_size: 2
+  initial_pool_stride: 2
+  n_filters: [512, 1024, 1024]
+  activation: leaky_relu
+  output_length: 20
+  final_activation: tanh
+
+# Detection parameters
+threshold: 0.0
