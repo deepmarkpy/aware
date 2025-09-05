@@ -1,4 +1,4 @@
-from .multibit_detector import MultibitSTFTMagnitudeDetector
-from .multibit_detector_net import MultibitSTFTMagnitudeDetectorNetAWARE
+from .multibit_detector import AWAREDetector
+from .multibit_detector_net import AWAREDetectorNet
 
-__all__ = ['MultibitSTFTMagnitudeDetector', 'MultibitSTFTMagnitudeDetectorNetAWARE']
+__all__ = ['AWAREDetector', 'AWAREDetectorNet']

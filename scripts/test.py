@@ -2,9 +2,9 @@ import numpy as np
 import librosa
 from pathlib import Path
 from AWARE.utils import logger
-from AWARE.utils.models import *
+from AWARE.utils.models import load
 from AWARE.service import embed_watermark, detect_watermark
-from attacks import PCMBitDepthConversion, MP3Compression, DeleteSamples, TimeStretch, Resample, RandomBandstop, SampleSupression, LowPassFilter, HighPassFilter, Cropout
+from attacks import PCMBitDepthConversion, MP3Compression, DeleteSamples, PitchShift, TimeStretch, Resample, RandomBandstop, SampleSupression, LowPassFilter, HighPassFilter
 from AWARE.metrics.audio import PESQ, SNR, BER, STOI
 
 import logging
@@ -12,8 +12,9 @@ logger.setLevel(logging.DEBUG)
 
 def main():
 
-    attack_list = [ PCMBitDepthConversion(8), PCMBitDepthConversion(16), MP3Compression(9), MP3Compression(5), DeleteSamples(0.1),
-                    DeleteSamples(0.25), DeleteSamples(0.5), DeleteSamples(0.75), TimeStretch(0.8), TimeStretch(0.9), TimeStretch(1.1), TimeStretch(1.2),
+    attack_list = [ PCMBitDepthConversion(8), PCMBitDepthConversion(12), PCMBitDepthConversion(16), PCMBitDepthConversion(24), 
+                    MP3Compression(9), MP3Compression(5), MP3Compression(2), MP3Compression(0), DeleteSamples(0.1), DeleteSamples(0.15),
+                    DeleteSamples(0.2), TimeStretch(0.8), TimeStretch(0.9), TimeStretch(1.1), TimeStretch(1.2), PitchShift(),
                     Resample(), RandomBandstop(), SampleSupression(0.1), SampleSupression(0.25), LowPassFilter() , HighPassFilter()] 
 
     print("Watermark Test Pipeline")
@@ -24,8 +25,8 @@ def main():
     project_root = script_dir.parent
     cards_dir = project_root / "src" / "deltamark" / "cards"
     audio_folder_path = project_root / "common"
-    print("gg")
     
+
     # Check if audio file exists
     if not audio_folder_path.exists():
         logger.error(f"Audio file path not found: {audio_folder_path}")
@@ -33,10 +34,9 @@ def main():
         return
     
     
-    embedder, detector = load_model()
+    embedder, detector = load()
 
     watermark_length = 20
-    watermark_bits = np.random.randint(0, 2, size=watermark_length, dtype=np.int32)
 
     pesq_metric = PESQ()
     stoi_metric = STOI()
@@ -51,19 +51,21 @@ def main():
 
     for audio_file_path in input_dir.glob('*.*'):
         audio, sr = librosa.load(str(audio_file_path), sr=None, mono=True)
-        print(sr)
+        
         logger.info("Processing " + audio_file_path.name)
 
-        '''
-        if sr == 44100:
+        watermark_bits = np.random.randint(0, 2, size=watermark_length, dtype=np.int32)
+        
+        
+        if sr != 16000:
             from scipy.signal import resample_poly
-            up, down = 1600, 4410
+            up, down = 16000, sr
             audio = resample_poly(audio, up, down)
-        '''
-        sr=44100
+        
+        sr=16000
         
         try:
-            watermarked_audio = embed_watermark(audio, sample_rate=44100, watermark_bits = watermark_bits, model = embedder)
+            watermarked_audio = embed_watermark(audio, sample_rate=sr, watermark_bits = watermark_bits, model = embedder)
         except ValueError as e:
             # handle a specific exception
             print(f"Bad_input {audio_file_path.name}: ", e)
@@ -79,6 +81,7 @@ def main():
             logger.debug(f"PESQ : {pesq_}")
         except Exception as e:
             logger.info("Nema PESQ, Tisina")
+
 
         stoi_ = stoi_metric(watermarked_audio, audio, sr)
         if stoi_ > 0.1:
@@ -102,7 +105,7 @@ def main():
                 rec[name] = []
             rec[name].append(ber)
 
-            if name in ['low_pass', 'high_pass', 'delete_0.1', 'delete_0.25', 'ts_0.9', 'ts_1.1']:
+            if name in ['pcm_8', 'ps_5', 'delete_0.1', 'delete_0.2', 'ts_0.9', 'ts_1.1']:
                 logger.debug(name + ": " + f"{ber:.2f}")
             
     
@@ -110,9 +113,8 @@ def main():
         items = np.array(rec[att])
 
         mean = items.mean()
-        pop_std = items.std()
-
-        logger.info(att + ": " + f"mean: {mean:.4f}" + f" pop_std: {pop_std:.4f}") 
+        
+        logger.info(att + ": " + f"mean: {mean:.4f}") 
 
 if __name__ == "__main__":
     main()

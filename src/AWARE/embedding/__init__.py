@@ -1,3 +1,3 @@
-from .multibit_embedder import MultibitSTFTMagnitudeEmbedder
+from .multibit_embedder import AWAREEmbedder
 
-__all__ = ['MultibitSTFTMagnitudeEmbedder']
+__all__ = ['AWAREEmbedder']

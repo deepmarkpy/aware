@@ -48,10 +48,15 @@ class PCMBitDepthConversion(Attack):
             audio: Input audio (float32, range -1 to 1)
             sr: Sample rate
         """
+        audio = audio / np.max(np.abs(audio) + 1e-8)
         if self.pcm == 8:
             # 8-bit signed: -128 to 127
             audio_int = np.clip(audio * 127.0, -128, 127).astype(np.int8)
             audio = audio_int.astype(np.float32) / 127.0
+        elif self.pcm == 12:   
+            # 12-bit signed: -4096 to 4095
+            audio_int = np.clip(audio * 4095.0, -4096, 4095).astype(np.int16)
+            audio = audio_int.astype(np.float32) / 4095.0
         elif self.pcm == 16:   
             # 16-bit signed: -32768 to 32767
             audio_int = np.clip(audio * 32767.0, -32768, 32767).astype(np.int16)
@@ -223,11 +228,35 @@ class TimeStretch(Attack):
         return audio_stretched
 
 
+class PitchShift(Attack):
+    """Time stretch attack"""
+    
+    def __init__(self, cents=5):
+        """
+        Args:
+            `rate > 1` → playback is faster (duration decreases).
+            `rate < 1` → playback is slower (duration increases).
+        """
+        self.cents = cents
+        self.name = f"ps_{cents}"
+    
+    def apply(self, audio, sr):
+        """
+            Args:
+            audio: Input audio (float32, range -1 to 1)
+            sr: Sample rate
+        """
+        semitones = self.cents / 100
+        audio_ps = pyrb.pitch_shift(audio, sr, semitones)
+
+        return audio_ps
+
+
 
 class Resample(Attack):
     """Resample attack"""
     
-    def __init__(self, target_sr=32000):
+    def __init__(self, target_sr=16000):
         """
         Args:
             target_sr: Target sample rate for downsampling
@@ -359,7 +388,7 @@ class SampleSupression(Attack):
 class LowPassFilter(Attack):
     """Zero out samples attack"""
     
-    def __init__(self, cut_off = 5000.0, order = 6):
+    def __init__(self, cut_off = 4000.0, order = 6):
         """
         Args:
             percentage: Percentage of samples to zero out (0-1)

@@ -5,17 +5,17 @@ import librosa
 import numpy as np
 import time
 
-from AWARE.detection import MultibitSTFTMagnitudeDetectorNetAWARE
+from AWARE.detection import AWAREDetectorNet
 from AWARE.embedding.optimizers import get_optimizer
 from AWARE.embedding.schedulers import get_scheduler
 from AWARE.embedding.losses import get_loss_fn
-from AWARE.utils.audio import *
+from AWARE.utils.audio import WaveformNormalizer, STFT, STFTDecomposer, STFTAssembler, ISTFT
 from AWARE.utils.watermark import * 
 from AWARE.utils.logger import logger
 from AWARE.utils.utils import to_tensor
 
-class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
-    def __init__(self, frame_length: int = 2048, hop_length: int = 512, window: str = "hann", win_length: int = 2048, pattern_mode: str = "bits2bipolar", embedding_bands: tuple[int, int] = (300, 4000), tolerance_db: float = 6.0, num_iterations: int = 1000, detection_net_cfg: dict = None, optimizer_cfg: dict = None, scheduler_cfg: dict = None, loss:str = "push", verbose: bool = True):
+class AWAREEmbedder(BaseEmbedder):
+    def __init__(self, frame_length: int = 1024, hop_length: int = 256, window: str = "hann", win_length: int = 1024, pattern_mode: str = "bits2bipolar", embedding_bands: tuple[int, int] = (500, 4000), tolerance_db: float = 6.0, num_iterations: int = 400, detection_net_cfg: dict = None, optimizer_cfg: dict = None, scheduler_cfg: dict = None, loss:str = "push", verbose: bool = True):
         self.frame_length = frame_length
         self.hop_length = hop_length
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -24,8 +24,8 @@ class MultibitSTFTMagnitudeEmbedder(BaseEmbedder):
         self.num_iterations = num_iterations
         
         self.pattern_mode = pattern_mode
-
-        self.detection_net = MultibitSTFTMagnitudeDetectorNetAWARE(**detection_net_cfg)
+        
+        self.detection_net = AWAREDetectorNet(**detection_net_cfg)
         self.detection_net.eval().to(self.device) # Keep detection network in eval mode (frozen), but allow gradients to flow through
         
 
