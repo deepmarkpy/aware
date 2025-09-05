@@ -1,5 +1,5 @@
 import numpy as np
-from AWARE.interfaces.watermark import BasePatternProcessor
+from aware.interfaces.watermark import BasePatternProcessor
 from typing import Any
 
 class PatternEncoder(BasePatternProcessor):

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from AWARE.interfaces.detection import BaseDetectorNet
-from AWARE.detection.modules import Conv1dBlock, MelFilterBankLayer, GlobalStandardize, BRH
+from aware.interfaces.detection import BaseDetectorNet
+from aware.detection.modules import Conv1dBlock, MelFilterBankLayer, GlobalStandardize, BRH
 
 
 class AWAREDetectorNet(BaseDetectorNet):

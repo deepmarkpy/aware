@@ -1,7 +1,7 @@
-from AWARE.embedding.multibit_embedder import AWAREEmbedder
-from AWARE.utils.audio import SilenceChecker
-from AWARE.utils.watermark import PatternEncoder
-from AWARE.utils.logger import logger
+from aware.embedding.multibit_embedder import AWAREEmbedder
+from aware.utils.audio import SilenceChecker
+from aware.utils.watermark import PatternEncoder
+from aware.utils.logger import logger
 import numpy as np
 
 def embed_watermark(audio: np.ndarray, sample_rate: int, watermark_bits:bytes | np.ndarray, model: AWAREEmbedder)->np.ndarray:

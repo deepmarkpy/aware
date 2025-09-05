@@ -1,4 +1,4 @@
-from AWARE.interfaces.metrics import BaseMetrics
+from aware.interfaces.metrics import BaseMetrics
 import torch
 import numpy as np
 from pesq import pesq

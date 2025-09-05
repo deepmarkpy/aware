@@ -1,7 +1,7 @@
 import numpy as np
-from AWARE.detection.multibit_detector import AWAREDetector
-from AWARE.utils.watermark import PatternDecoder
-from AWARE.utils.logger import logger
+from aware.detection.multibit_detector import AWAREDetector
+from aware.utils.watermark import PatternDecoder
+from aware.utils.logger import logger
 
 
 def detect_watermark(audio: np.ndarray, sample_rate: int, detector: AWAREDetector):

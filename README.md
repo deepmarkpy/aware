@@ -6,7 +6,7 @@ Paper title: AWARE (Adversarial WAtermarking for Robust Embedding)
 ## Installation
 ```bash
 git clone https://github.com/username/repo.git
-cd ./AWARE
+cd ./aware
 python -m pip install -e .
 ```
 
@@ -14,16 +14,12 @@ python -m pip install -e .
 ```python
 import numpy as np
 import librosa
-from AWARE.utils.models import *
-from AWARE.service import *
-from AWARE.metrics.audio import *
+from aware.utils.models import load
+from aware.service import embed_watermark, detect_watermark
+from aware.metrics.audio import BER, PESQ
 
 # 1.load model
-device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
-
-embedder, detector = load_model()
-detector = detector.to(device)
-
+embedder, detector = load()
 
 # 2.create 20-bit watermark
 watermark_bits = np.random.randint(0, 2, size=20, dtype=np.int32)

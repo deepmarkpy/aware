@@ -1,9 +1,9 @@
 import torch
 import numpy as np
 import librosa
-from AWARE.interfaces.detection import BaseDetectorNet, BaseDetector
-from AWARE.utils.utils import to_tensor
-from AWARE.utils.audio import WaveformNormalizer, STFTDecomposer, STFT
+from aware.interfaces.detection import BaseDetectorNet, BaseDetector
+from aware.utils.utils import to_tensor
+from aware.utils.audio import WaveformNormalizer, STFTDecomposer, STFT
 
 
 class AWAREDetector(BaseDetector):

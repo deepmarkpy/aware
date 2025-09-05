@@ -1,18 +1,18 @@
-from AWARE.interfaces.embedding import BaseEmbedder
+from aware.interfaces.embedding import BaseEmbedder
 import torch
 import torch.nn as nn
 import librosa
 import numpy as np
 import time
 
-from AWARE.detection import AWAREDetectorNet
-from AWARE.embedding.optimizers import get_optimizer
-from AWARE.embedding.schedulers import get_scheduler
-from AWARE.embedding.losses import get_loss_fn
-from AWARE.utils.audio import WaveformNormalizer, STFT, STFTDecomposer, STFTAssembler, ISTFT
-from AWARE.utils.watermark import * 
-from AWARE.utils.logger import logger
-from AWARE.utils.utils import to_tensor
+from aware.detection import AWAREDetectorNet
+from aware.embedding.optimizers import get_optimizer
+from aware.embedding.schedulers import get_scheduler
+from aware.embedding.losses import get_loss_fn
+from aware.utils.audio import WaveformNormalizer, STFT, STFTDecomposer, STFTAssembler, ISTFT
+from aware.utils.watermark import * 
+from aware.utils.logger import logger
+from aware.utils.utils import to_tensor
 
 class AWAREEmbedder(BaseEmbedder):
     def __init__(self, frame_length: int = 1024, hop_length: int = 256, window: str = "hann", win_length: int = 1024, pattern_mode: str = "bits2bipolar", embedding_bands: tuple[int, int] = (500, 4000), tolerance_db: float = 6.0, num_iterations: int = 400, detection_net_cfg: dict = None, optimizer_cfg: dict = None, scheduler_cfg: dict = None, loss:str = "push", verbose: bool = True):

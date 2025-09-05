@@ -1,11 +1,11 @@
 import numpy as np
 import librosa
 from pathlib import Path
-from AWARE.utils import logger
-from AWARE.utils.models import load
-from AWARE.service import embed_watermark, detect_watermark
+from aware.utils import logger
+from aware.utils.models import load
+from aware.service import embed_watermark, detect_watermark
 from attacks import PCMBitDepthConversion, MP3Compression, DeleteSamples, PitchShift, TimeStretch, Resample, RandomBandstop, SampleSupression, LowPassFilter, HighPassFilter
-from AWARE.metrics.audio import PESQ, SNR, BER, STOI
+from aware.metrics.audio import PESQ, SNR, BER, STOI
 
 import logging
 logger.setLevel(logging.DEBUG)

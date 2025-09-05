@@ -1,7 +1,7 @@
 from setuptools import setup, find_packages
 
 setup(
-    name="AWARE",
+    name="aware",
     version="0.1.0",
     description="Audio watermarking with small (Δ) adversarial perturbations.",
     packages=find_packages(where="src"),

@@ -1,5 +1,5 @@
 import torch
-from AWARE.utils import logger
+from aware.utils import logger
 registry = {
     "adam": torch.optim.Adam,
     "nadam": torch.optim.NAdam,

@@ -1,4 +1,4 @@
-from AWARE.interfaces.audio import BaseAudioProcessor
+from aware.interfaces.audio import BaseAudioProcessor
 import torch
 import numpy as np
 import webrtcvad

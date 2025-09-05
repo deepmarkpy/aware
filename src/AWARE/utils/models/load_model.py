@@ -1,7 +1,7 @@
 from pathlib import Path
-from AWARE.embedding import AWAREEmbedder
-from AWARE.detection import AWAREDetector
-from AWARE.utils import load_config, logger
+from aware.embedding import AWAREEmbedder
+from aware.detection import AWAREDetector
+from aware.utils import load_config, logger
 
 def load():
     script_dir = Path(__file__).parent.parent.parent

@@ -1,5 +1,5 @@
 import numpy as np
-from AWARE.interfaces.watermark import BasePatternProcessor
+from aware.interfaces.watermark import BasePatternProcessor
 
 class PatternDecoder(BasePatternProcessor):
     """Utility class for decoding detected watermark patterns"""
