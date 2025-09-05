@@ -3,12 +3,11 @@ import numpy as np
 import librosa
 from AWARE.interfaces.detection import BaseDetectorNet, BaseDetector
 from AWARE.utils.utils import to_tensor
-from AWARE.utils.audio import *
-from AWARE.utils.watermark import *
+from AWARE.utils.audio import WaveformNormalizer, STFTDecomposer, STFT
 
 
-class MultibitSTFTMagnitudeDetector(BaseDetector):
-    def __init__(self, model: BaseDetectorNet, threshold: float = 0.0, frame_length: int = 2048, hop_length: int = 512, window: str = "hann", win_length: int = 2048, pattern_mode: str = "bits2bipolar", embedding_bands: tuple[int, int] = (300, 4000)):
+class AWAREDetector(BaseDetector):
+    def __init__(self, model: BaseDetectorNet, threshold: float = 0.0, frame_length: int = 1024, hop_length: int = 256, window: str = "hann", win_length: int = 1024, pattern_mode: str = "bits2bipolar", embedding_bands: tuple[int, int] = (500, 4000)):
         self.threshold = threshold
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 

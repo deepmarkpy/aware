@@ -1,11 +1,10 @@
+import torch
 import torch.nn as nn
-from AWARE.interfaces.detection import BaseDetectorNet, BaseDetector
-from AWARE.detection.modules import Conv1dBlock, MelFilterBankLayer, GlobalStandardize
-from AWARE.utils.utils import to_tensor
-from AWARE.utils.audio import *
-from AWARE.utils.watermark import *
+from AWARE.interfaces.detection import BaseDetectorNet
+from AWARE.detection.modules import Conv1dBlock, MelFilterBankLayer, GlobalStandardize, BRH
 
-class MultibitSTFTMagnitudeDetectorNetAWARE(BaseDetectorNet):
+
+class AWAREDetectorNet(BaseDetectorNet):
 
     """
     Neural network for watermark detection in audio spectrograms
@@ -13,8 +12,8 @@ class MultibitSTFTMagnitudeDetectorNetAWARE(BaseDetectorNet):
     """
     
     def __init__(self, 
-                 sample_rate: int = 44100,
-                 n_fft: int = 2048,
+                 sample_rate: int = 16000,
+                 n_fft: int = 1024,
                  n_mels: int = 128,
                  initial_pool_size: int = 2,
                  initial_pool_stride: int = 2,
@@ -28,7 +27,7 @@ class MultibitSTFTMagnitudeDetectorNetAWARE(BaseDetectorNet):
                  output_length: int = 20,
                  final_activation: str = 'tanh'):
         
-        super(MultibitSTFTMagnitudeDetectorNetAWARE, self).__init__()
+        super(AWAREDetectorNet, self).__init__()
         
         assert len(n_filters) == num_blocks, "Number of filters must match number of blocks"
         
@@ -69,13 +68,14 @@ class MultibitSTFTMagnitudeDetectorNetAWARE(BaseDetectorNet):
                 activation=activation
             )
             self.conv_blocks.append(block)
-
-        # Global average pooling
-        self.global_avg_pool = nn.AdaptiveAvgPool1d(1)
         
-        # Apply final activation
-        self.final_activation = self._get_activation(final_activation)
 
+        self.final_activation = self._get_activation(final_activation)
+        # Bitwise Readout Head(BRH)
+        self.BRH = BRH(self.final_activation)
+
+        #Fixing seed for reproducibility
+        torch.manual_seed(328656719)
         # Initialize weights
         self.apply(self._init_weights)
     
@@ -134,18 +134,8 @@ class MultibitSTFTMagnitudeDetectorNetAWARE(BaseDetectorNet):
         for block in self.conv_blocks:
             x = block(x)
         
-        # (B, C, T) -> (B, C, 1)
-        x = self.global_avg_pool(x)
-        
-        # (B, C, 1) -> (B, C) 
-        x = x.squeeze(2)
-
-        # Comparing output pairs to make decision for every bit
-        even = x[:, 0::2]   # (B, C/2)
-        odd  = x[:, 1::2]   # (B, C/2)
-        x = even - odd 
-
-        x = self.final_activation(x)
+        # Apply bitwise readout head
+        x = self.BRH(x)
 
         return x
 
