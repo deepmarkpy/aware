@@ -1,20 +1,19 @@
-from AWARE.embedding.multibit_embedder import MultibitSTFTMagnitudeEmbedder
-from AWARE.utils.audio import *
-from AWARE.utils.watermark import *
+from AWARE.embedding.multibit_embedder import AWAREEmbedder
+from AWARE.utils.audio import SilenceChecker
+from AWARE.utils.watermark import PatternEncoder
 from AWARE.utils.logger import logger
 import numpy as np
 
-def embed_watermark(audio: np.ndarray, sample_rate: int, watermark_bits:bytes | np.ndarray, model: MultibitSTFTMagnitudeEmbedder)->np.ndarray:
+def embed_watermark(audio: np.ndarray, sample_rate: int, watermark_bits:bytes | np.ndarray, model: AWAREEmbedder)->np.ndarray:
     
     """
     Embeds a given watermark in audio data and returns the watermarked audio data.
 
     Args:
         audio (np.ndarray): The audio data.
-        sampling_rate (int): Sampling rate of the audio.
-        chunk_duration(float): Duration(in seconds) of chunk for embedding
+        sampe_rate (int): Sampling rate of the audio.
         watermark_bits (buytes | np.ndarray): The watermark bits (0/1) to embed.
-        model (nn.Modul): The embeder model.
+        model: The embeder model.
  
     Returns:
         watermarked_audio (np.ndarray): The watermarked audio data.
@@ -22,9 +21,9 @@ def embed_watermark(audio: np.ndarray, sample_rate: int, watermark_bits:bytes | 
     pattern_preprocess_pipeline = [PatternEncoder(mode=model.pattern_mode)]
     silence_checker_pipeline = [SilenceChecker(sample_rate=sample_rate)]
 
-    if sample_rate != 44100:
-        logger.error(f"Invalid sample rate. Expected 44100, got {sample_rate}.")
-        raise ValueError("Invalid sample rate. Expected 44100.")
+    if sample_rate != 16000:
+        logger.error(f"Invalid sample rate. Expected 16000Hz, got {sample_rate}Hz.")
+        raise ValueError("Invalid sample rate. Expected 16000Hz.")
 
     watermark = watermark_bits
     for processor in pattern_preprocess_pipeline:

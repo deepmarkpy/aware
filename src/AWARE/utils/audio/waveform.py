@@ -21,7 +21,7 @@ class WaveformNormalizer(BaseAudioProcessor):
 
 class SilenceChecker(BaseAudioProcessor):
 
-    def __init__(self, sample_rate, aggr=3, frame_ms=30.0, min_speech_seconds=0.01):
+    def __init__(self, sample_rate = 16000, aggr = 3, frame_ms = 30.0, min_speech_seconds = 0.01):
         self.sample_rate = sample_rate
         self.aggr = aggr
         self.frame_ms = frame_ms
@@ -29,23 +29,17 @@ class SilenceChecker(BaseAudioProcessor):
 
 
     def __call__(self, data: np.ndarray) -> bool:
-        
-        if self.sample_rate != 16000:
-            audio = resampy.resample(data, self.sample_rate, 16000)
-        else:
-            audio = data
-        
-        sr = 16000
+        audio = data
         
         pcm = (audio * 32767).astype(np.int16).tobytes()
         
         vad = webrtcvad.Vad(self.aggr)
         
-        bytes_per_frame = int(sr * self.frame_ms / 1000) * 2
+        bytes_per_frame = int(self.sample_rate * self.frame_ms / 1000) * 2
         frames = [pcm[i:i+bytes_per_frame] for i in range(0, len(pcm), bytes_per_frame)
                 if len(pcm[i:i+bytes_per_frame]) == bytes_per_frame]
         
-        voiced_flags = [vad.is_speech(f, sr) for f in frames]
+        voiced_flags = [vad.is_speech(f, self.sample_rate) for f in frames]
         voiced_count = sum(voiced_flags)
         speech_seconds = voiced_count * (self.frame_ms / 1000.0)
         

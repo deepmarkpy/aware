@@ -1,16 +1,16 @@
 
 # Audio processing parameters  
-frame_length: 2048
-hop_length: 512
+frame_length: 1024
+hop_length: 256
 window: hann
-win_length: 2048
+win_length: 1024
 
 # Pattern processing
 pattern_mode: bits2bipolar  # bipolar, unipolar, bits
 watermark_length: 20  # number of bits in the watermark
 
 # Watermark parameters
-embedding_bands: [300, 4000]  # frequency range for embedding (Hz)
+embedding_bands: [500, 4000]  # frequency range for embedding (Hz)
 tolerance_db: 6.0  # lower = stronger watermark, higher = weaker watermark
 
 # Optimization parameters
@@ -31,8 +31,8 @@ verbose: false
 
 # Detection network configuration
 detection_net_cfg:
-  sample_rate: 44100
-  n_fft: 2048
+  sample_rate: 16000
+  n_fft: 1024
   n_mels: 128
   num_blocks: 3
   initial_pool_size: 2

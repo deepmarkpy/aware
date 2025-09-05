@@ -1,30 +1,24 @@
 import numpy as np
-from AWARE.detection.multibit_detector import MultibitSTFTMagnitudeDetector
-from AWARE.utils.audio import *
-from AWARE.utils.watermark import *
+from AWARE.detection.multibit_detector import AWAREDetector
+from AWARE.utils.watermark import PatternDecoder
 from AWARE.utils.logger import logger
 
 
-def detect_watermark(audio: np.ndarray, sample_rate: int, detector: MultibitSTFTMagnitudeDetector):
+def detect_watermark(audio: np.ndarray, sample_rate: int, detector: AWAREDetector):
     """
     Detects the presence of a watermark in audio data and returns the detection decision, extracted watermark, and confidence statistics.
 
     Args:
         audio (np.ndarray): The audio data.
-        samplie_rate (int): Sampling rate of the audio.
-        chunk_duration (float): Duration of chunk for detection
+        sample_rate (int): Sampling rate of the audio.
     Returns:
-        tuple:
-            - bool: True if the watermark is detected with sufficient confidence, False otherwise.
-            - bytes: The extracted watermark data.
-            - float: The confidence score of the watermark being present in the detected values.
-            - dict: The confidence scores for each segment.
+        watermark bits
     """
     pattern_postprocess_pipeline = [PatternDecoder(encoder_mode=detector.pattern_mode, threshold=detector.threshold)]
     
-    if sample_rate != 44100:
-        logger.error(f"Invalid sample rate. Expected 44100, got {sample_rate}.")
-        raise ValueError(f"Invalid sample rate. Expected 44100")
+    if sample_rate != 16000:
+        logger.error(f"Invalid sample rate. Expected 16000Hz, got {sample_rate}Hz.")
+        raise ValueError("Invalid sample rate. Expected 16000Hz.")
 
     if len(audio.shape) == 2 and audio.shape[1] == 2: #stereo
         left_channel = audio[:, 0]
