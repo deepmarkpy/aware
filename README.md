@@ -2,7 +2,7 @@
 
 ## Installation
 ```bash
-git clone https://github.com/username/repo.git
+git clone https://github.com/deepmarkpy/aware.git
 cd ./aware
 python -m pip install -e .
 ```
